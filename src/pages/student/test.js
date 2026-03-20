@@ -36,6 +36,97 @@ export function renderTest(container) {
   // Enable anti-cheat
   initAntiCheat(user.name);
 
+  // If revision material exists, show it for 5 minutes first
+  if (currentTest.revisionMaterial) {
+    showRevisionScreen(container, user, () => {
+      renderTestUI(container);
+    });
+  } else {
+    renderTestUI(container);
+  }
+}
+
+function showRevisionScreen(container, user, onComplete) {
+  let revisionTimeLeft = 5 * 60; // 5 minutes in seconds
+
+  container.innerHTML = `
+    <div class="test-page no-select">
+      <div class="test-topbar">
+        <div class="flex items-center gap-md">
+          <span class="nav-brand">ExamPrep</span>
+          <span class="badge badge-blue">${currentTest.exam}</span>
+          <span class="text-sm text-muted">${currentTest.topic || 'Scheduled Test'}</span>
+        </div>
+        <div class="flex items-center gap-md">
+          <div class="timer-display" id="revision-timer" style="background: rgba(59, 130, 246, 0.15); color: var(--accent-blue);">05:00</div>
+          <span class="badge badge-medium" style="padding: 0.4rem 0.8rem;">📖 Revision</span>
+        </div>
+      </div>
+
+      <div style="max-width: 900px; margin: 0 auto; padding: 1.5rem;">
+        <div class="card" style="border: 1px solid rgba(59, 130, 246, 0.3); background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), transparent);">
+          <div class="card-header" style="border-bottom: 1px solid rgba(59, 130, 246, 0.15);">
+            <span class="card-title">📖 Revision Material</span>
+            <span class="text-xs text-muted" id="revision-msg">Read carefully — test starts automatically after the timer</span>
+          </div>
+          <div style="padding: 1.5rem; max-height: 70vh; overflow-y: auto;">
+            <div id="revision-content" style="white-space: pre-wrap; line-height: 1.8; font-size: 1rem; color: var(--text-primary);">${currentTest.revisionMaterial}</div>
+          </div>
+        </div>
+        <div style="text-align: center; margin-top: 1.5rem;">
+          <div class="text-sm text-muted">⏳ Test will start automatically in <strong id="revision-countdown-text">5:00</strong></div>
+          <div class="progress-bar mt-md" style="max-width: 400px; margin: 0 auto;">
+            <div class="progress-fill green" id="revision-progress" style="width: 0%; transition: width 1s linear;"></div>
+          </div>
+          <p class="text-xs text-muted mt-md">You cannot skip this. Use this time to revise!</p>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .test-topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0.75rem 1.5rem; background: rgba(10, 14, 26, 0.95);
+        backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-color);
+        position: sticky; top: 0; z-index: 100;
+      }
+    </style>
+  `;
+
+  const timerEl = document.getElementById('revision-timer');
+  const countdownText = document.getElementById('revision-countdown-text');
+  const progressBar = document.getElementById('revision-progress');
+  const totalTime = 300; // 5 min
+
+  const revInterval = setInterval(() => {
+    revisionTimeLeft--;
+    const m = Math.floor(revisionTimeLeft / 60);
+    const s = revisionTimeLeft % 60;
+    const display = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    timerEl.textContent = display;
+    countdownText.textContent = display;
+    progressBar.style.width = ((totalTime - revisionTimeLeft) / totalTime * 100) + '%';
+
+    if (revisionTimeLeft <= 30) {
+      timerEl.style.background = 'rgba(245, 158, 11, 0.15)';
+      timerEl.style.color = 'var(--accent-orange)';
+    }
+    if (revisionTimeLeft <= 10) {
+      timerEl.style.background = 'rgba(239, 68, 68, 0.15)';
+      timerEl.style.color = 'var(--accent-red)';
+    }
+
+    if (revisionTimeLeft <= 0) {
+      clearInterval(revInterval);
+      // Reset startTime so test timer counts from now
+      startTime = Date.now();
+      onComplete();
+    }
+  }, 1000);
+}
+
+function renderTestUI(container) {
+
   container.innerHTML = `
     <div class="test-page no-select">
       <!-- Top Bar -->

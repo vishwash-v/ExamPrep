@@ -301,6 +301,9 @@ export async function renderStudentDashboard(container) {
           scheduledTestId: schedTest.id,
           createdAt: Date.now()
         };
+        if (schedTest.revisionMaterial) {
+          test.revisionMaterial = schedTest.revisionMaterial;
+        }
         
         sessionStorage.setItem('currentTest', JSON.stringify(test));
         window.location.hash = '#/student/test';

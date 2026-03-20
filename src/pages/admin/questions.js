@@ -164,6 +164,16 @@ export async function renderAdminQuestions(container) {
               <label class="form-label">Instructions (optional)</label>
               <textarea class="form-textarea" id="sch-instructions" rows="2" placeholder="e.g. Focus on numerical problems..."></textarea>
             </div>
+            <div class="form-group mb-md">
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-bottom:0.5rem;">
+                <input type="checkbox" id="sch-revision-check" style="accent-color:var(--accent-blue);width:16px;height:16px;">
+                <span class="text-sm font-semibold">📖 Provide Revision Material?</span>
+              </label>
+              <div id="sch-revision-area" style="display:none;">
+                <p class="text-xs text-muted mb-sm">This material will be shown to the student for <strong>5 minutes</strong> before the test starts. No skipping allowed.</p>
+                <textarea class="form-textarea" id="sch-revision-material" rows="6" placeholder="Paste revision notes, formulas, key concepts here..."></textarea>
+              </div>
+            </div>
             <div class="card mb-md" style="padding: 0.75rem; background: var(--bg-glass);">
               <span class="text-xs text-muted">Auto-pick pool: </span>
               <span class="badge badge-blue text-xs" id="sch-pool-count">0</span>
@@ -287,6 +297,11 @@ export async function renderAdminQuestions(container) {
       document.getElementById('sch-paste-info').style.display = parsed.length > 0 ? 'block' : 'none';
     });
 
+    // --- Revision material toggle ---
+    document.getElementById('sch-revision-check').addEventListener('change', (e) => {
+      document.getElementById('sch-revision-area').style.display = e.target.checked ? 'block' : 'none';
+    });
+
     // --- Schedule submit ---
     document.getElementById('schedule-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -364,6 +379,13 @@ export async function renderAdminQuestions(container) {
         difficultyMix, instructions,
         marking: EXAMS[exam].marking
       };
+
+      // Revision material
+      const hasRevision = document.getElementById('sch-revision-check').checked;
+      const revisionText = document.getElementById('sch-revision-material').value.trim();
+      if (hasRevision && revisionText) {
+        testData.revisionMaterial = revisionText;
+      }
 
       // If NOT adding to bank, embed the full question data in the test so they're available
       if (!addToBank && parsedNewQuestions.length > 0) {
