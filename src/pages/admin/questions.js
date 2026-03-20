@@ -527,8 +527,8 @@ export async function renderAdminQuestions(container) {
   function renderQuestionsTab() {
     const qTab = document.getElementById('tab-questions');
     qTab.innerHTML = `
-      <div class="grid-2" style="grid-template-columns: 340px 1fr;">
-        <div>
+      <div style="display:grid;grid-template-columns:340px minmax(0,1fr);gap:1rem;">
+        <div style="min-width:0;">
           <div class="card mb-md">
             <div class="card-header"><span class="card-title">Add Questions</span></div>
             <div class="form-group mb-md"><label class="form-label">Exam</label>
@@ -557,14 +557,14 @@ export async function renderAdminQuestions(container) {
             </div>
           </div>
         </div>
-        <div>
+        <div style="min-width:0;overflow:hidden;">
           <div class="card mb-md">
             <div class="card-header"><span class="card-title">📊 Stats</span><button class="btn btn-ghost btn-sm" id="refresh-stats">↻</button></div>
             <div id="stats-content"><div class="loading-screen" style="min-height:60px;"><div class="spinner"></div></div></div>
           </div>
           <div class="card" style="overflow:hidden;">
             <div class="card-header"><span class="card-title">📚 Questions</span><span class="text-xs text-muted" id="total-q-count"></span></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:0.5rem;margin-bottom:0.75rem;">
               <select class="form-select" id="filter-exam" style="font-size:0.8rem;padding:0.5rem 0.75rem;min-width:0;">
                 <option value="">All Exams</option>
                 ${Object.keys(EXAMS).map(id => `<option value="${id}">${EXAMS[id].name}</option>`).join('')}
