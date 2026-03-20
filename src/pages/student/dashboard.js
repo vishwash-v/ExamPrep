@@ -264,10 +264,16 @@ export async function renderStudentDashboard(container) {
           return;
         }
         
-        // Load the actual questions by ID
+        // Load the actual questions by ID — check both question bank AND embedded questions
         const allQuestions = await Store.getAllQuestions();
         const qMap = {};
         allQuestions.forEach(q => { qMap[q.id] = q; });
+        // Also include embedded questions (pasted but not saved to bank)
+        if (schedTest.embeddedQuestions) {
+          Object.values(schedTest.embeddedQuestions).forEach(q => {
+            if (!qMap[q.id]) qMap[q.id] = q;
+          });
+        }
         
         const questions = schedTest.questionIds
           .map(id => qMap[id])
@@ -388,8 +394,8 @@ export async function renderStudentDashboard(container) {
 
     const recentList = document.getElementById('recent-tests-list');
     if (examResults.length > 0) {
-      recentList.innerHTML = examResults.slice(0, 5).map(r => `
-        <div class="topic-card" style="cursor: default;">
+      recentList.innerHTML = examResults.slice(0, 5).map((r, idx) => `
+        <div class="topic-card js-review-test" data-ridx="${idx}" style="cursor: pointer;">
           <div>
             <div class="font-semibold text-sm">${r.topic || r.type}</div>
             <div class="text-xs text-muted">${formatDate(r.timestamp)} • ${r.totalQuestions}Q</div>
@@ -397,9 +403,22 @@ export async function renderStudentDashboard(container) {
           <div class="flex items-center gap-sm">
             <span class="badge ${r.accuracy >= 75 ? 'badge-easy' : r.accuracy >= 50 ? 'badge-medium' : 'badge-hard'}">${r.accuracy}%</span>
             <span class="text-sm font-semibold">${r.score}/${r.totalMarks}</span>
+            <span class="text-xs text-muted">View →</span>
           </div>
         </div>
       `).join('');
+
+      // Click to view test review
+      recentList.querySelectorAll('.js-review-test').forEach(card => {
+        card.addEventListener('click', () => {
+          const idx = parseInt(card.dataset.ridx);
+          const result = examResults[idx];
+          if (result) {
+            sessionStorage.setItem('lastResult', JSON.stringify(result));
+            window.location.hash = '#/student/results';
+          }
+        });
+      });
     }
   }
 

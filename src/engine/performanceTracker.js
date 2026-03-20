@@ -97,7 +97,7 @@ export const PerformanceTracker = {
 
   // Save result and update tracking
   async saveResult(userId, result) {
-    // Save test result
+    // Save test result (include questionResults for review later)
     await Store.saveTestResult(userId, {
       testId: result.testId,
       type: result.type,
@@ -112,8 +112,11 @@ export const PerformanceTracker = {
       totalMarks: result.totalMarks,
       accuracy: result.accuracy,
       timeTaken: result.timeTaken,
+      timeLimit: result.timeLimit,
       avgTimePerQuestion: result.avgTimePerQuestion,
       topicBreakdown: result.topicBreakdown,
+      questionResults: result.questionResults,
+      marking: result.marking,
       timestamp: Date.now()
     });
 

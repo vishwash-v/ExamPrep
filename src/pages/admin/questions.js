@@ -176,7 +176,11 @@ export async function renderAdminQuestions(container) {
             <div class="card-header" style="margin-bottom:0.5rem;">
               <span class="card-title text-sm">➕ Add New Questions for This Test</span>
             </div>
-            <p class="text-xs text-muted mb-sm">Paste questions below — they'll be added to the <strong>question bank</strong> AND included in this scheduled test.</p>
+            <p class="text-xs text-muted mb-sm">Paste questions below — they'll be included in this scheduled test.</p>
+            <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer;">
+              <input type="checkbox" id="sch-add-to-bank" style="accent-color:var(--accent-blue);width:16px;height:16px;">
+              <span class="text-xs">Also add these questions to the <strong>Question Bank</strong></span>
+            </label>
             <p class="text-xs text-muted mb-md" style="font-family:monospace;">Format: Q: / A: / B: / C: / D: / ANS: / DIFF: / SOL:</p>
             <div class="form-group mb-md">
               <textarea class="form-textarea" id="sch-new-questions" rows="8" placeholder="Q: What is Newton's first law?&#10;A: Law of inertia&#10;B: F=ma&#10;C: Action-reaction&#10;D: None&#10;ANS: A&#10;DIFF: easy&#10;SOL: Newton's first law states..."></textarea>
@@ -304,14 +308,21 @@ export async function renderAdminQuestions(container) {
       const scheduledDate = new Date(`${date}T${time}`).getTime();
       if (isNaN(scheduledDate)) { showToast('Invalid date/time', 'error'); return; }
 
-      // 1. Parse & save pasted new questions to the question bank
+      // 1. Parse pasted questions — optionally save to question bank
+      const addToBank = document.getElementById('sch-add-to-bank').checked;
       const newQuestionIds = [];
+      let parsedNewQuestions = [];
       if (pastedText) {
-        const parsed = parseQuestions(pastedText, exam, subject || 'General', topic || 'General');
-        if (parsed.length > 0) {
-          const savedIds = await Store.addQuestionsBulk(parsed);
-          newQuestionIds.push(...savedIds);
-          showToast(`${parsed.length} new questions added to question bank!`, 'success');
+        parsedNewQuestions = parseQuestions(pastedText, exam, subject || 'General', topic || 'General');
+        if (parsedNewQuestions.length > 0) {
+          if (addToBank) {
+            const savedIds = await Store.addQuestionsBulk(parsedNewQuestions);
+            newQuestionIds.push(...savedIds);
+            showToast(`${parsedNewQuestions.length} new questions added to question bank!`, 'success');
+          } else {
+            // Use temporary IDs — questions only live in this test
+            parsedNewQuestions.forEach(q => newQuestionIds.push(q.id));
+          }
         }
       }
 
@@ -353,6 +364,12 @@ export async function renderAdminQuestions(container) {
         difficultyMix, instructions,
         marking: EXAMS[exam].marking
       };
+
+      // If NOT adding to bank, embed the full question data in the test so they're available
+      if (!addToBank && parsedNewQuestions.length > 0) {
+        testData.embeddedQuestions = {};
+        parsedNewQuestions.forEach(q => { testData.embeddedQuestions[q.id] = q; });
+      }
 
       try {
         await Store.createScheduledTest(testData);
@@ -510,7 +527,7 @@ export async function renderAdminQuestions(container) {
   function renderQuestionsTab() {
     const qTab = document.getElementById('tab-questions');
     qTab.innerHTML = `
-      <div class="grid-2" style="grid-template-columns: 1fr 1fr;">
+      <div class="grid-2" style="grid-template-columns: 340px 1fr;">
         <div>
           <div class="card mb-md">
             <div class="card-header"><span class="card-title">Add Questions</span></div>
@@ -545,8 +562,20 @@ export async function renderAdminQuestions(container) {
             <div class="card-header"><span class="card-title">📊 Stats</span><button class="btn btn-ghost btn-sm" id="refresh-stats">↻</button></div>
             <div id="stats-content"><div class="loading-screen" style="min-height:60px;"><div class="spinner"></div></div></div>
           </div>
-          <div class="card">
+          <div class="card" style="overflow:hidden;">
             <div class="card-header"><span class="card-title">📚 Questions</span><span class="text-xs text-muted" id="total-q-count"></span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;overflow:hidden;">
+              <select class="form-select" id="filter-exam" style="font-size:0.8rem;padding:0.5rem 0.75rem;min-width:0;">
+                <option value="">All Exams</option>
+                ${Object.keys(EXAMS).map(id => `<option value="${id}">${EXAMS[id].name}</option>`).join('')}
+              </select>
+              <select class="form-select" id="filter-subject" style="font-size:0.8rem;padding:0.5rem 0.75rem;min-width:0;">
+                <option value="">All Subjects</option>
+              </select>
+              <select class="form-select" id="filter-topic" style="font-size:0.8rem;padding:0.5rem 0.75rem;min-width:0;">
+                <option value="">All Topics</option>
+              </select>
+            </div>
             <div class="form-group mb-md"><input class="form-input" type="text" id="search-questions" placeholder="Search..."></div>
             <div id="questions-list" style="max-height:450px;overflow-y:auto;"><div class="loading-screen" style="min-height:60px;"><div class="spinner"></div></div></div>
           </div>
@@ -606,6 +635,37 @@ export async function renderAdminQuestions(container) {
       parsedQuestions = [];
     });
 
+    // --- Filter dropdowns for Questions list ---
+    const filterExam = document.getElementById('filter-exam');
+    const filterSubject = document.getElementById('filter-subject');
+    const filterTopic = document.getElementById('filter-topic');
+
+    filterExam.addEventListener('change', () => {
+      const ex = filterExam.value;
+      if (ex) {
+        const subs = getSubjects(ex);
+        filterSubject.innerHTML = '<option value="">All Subjects</option>' + subs.map(s => `<option value="${s}">${s}</option>`).join('');
+      } else {
+        filterSubject.innerHTML = '<option value="">All Subjects</option>';
+      }
+      filterTopic.innerHTML = '<option value="">All Topics</option>';
+      loadQL();
+    });
+
+    filterSubject.addEventListener('change', () => {
+      const ex = filterExam.value;
+      const sub = filterSubject.value;
+      if (ex && sub) {
+        const tops = getTopics(ex, sub);
+        filterTopic.innerHTML = '<option value="">All Topics</option>' + tops.map(t => `<option value="${t}">${t}</option>`).join('');
+      } else {
+        filterTopic.innerHTML = '<option value="">All Topics</option>';
+      }
+      loadQL();
+    });
+
+    filterTopic.addEventListener('change', () => { loadQL(); });
+
     async function loadStats() {
       const el = document.getElementById('stats-content');
       const all = await Store.getAllQuestions();
@@ -617,21 +677,33 @@ export async function renderAdminQuestions(container) {
       `).join('') || '<p class="text-sm text-muted">No questions.</p>';
     }
 
+    function getFilteredQuestions(allQuestions) {
+      let filtered = allQuestions;
+      const fExam = filterExam.value;
+      const fSubject = filterSubject.value;
+      const fTopic = filterTopic.value;
+      if (fExam) filtered = filtered.filter(q => q.exam === fExam);
+      if (fSubject) filtered = filtered.filter(q => q.subject === fSubject);
+      if (fTopic) filtered = filtered.filter(q => q.topic === fTopic);
+      return filtered;
+    }
+
     async function loadQL() {
       const el = document.getElementById('questions-list');
       const all = await Store.getAllQuestions();
-      document.getElementById('total-q-count').textContent = `${all.length}Q`;
-      if (!all.length) { el.innerHTML = '<p class="text-sm text-muted" style="padding:1rem;">No questions yet</p>'; return; }
-      renderQL(all);
+      const filtered = getFilteredQuestions(all);
+      document.getElementById('total-q-count').textContent = `${filtered.length}Q`;
+      if (!filtered.length) { el.innerHTML = '<p class="text-sm text-muted" style="padding:1rem;">No questions found</p>'; return; }
+      renderQL(filtered);
     }
 
     function renderQL(qs) {
       const el = document.getElementById('questions-list');
       el.innerHTML = qs.slice(0,50).map(q => `
-        <div class="topic-card" style="margin-bottom:0.5rem;cursor:default;">
-          <div style="flex:1;min-width:0;"><div class="text-sm font-semibold" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${q.question}</div>
-          <div class="text-xs text-muted">${q.exam} • ${q.subject} • ${q.topic}</div></div>
-          <div class="flex items-center gap-sm"><span class="badge badge-${q.difficulty==='easy'?'easy':q.difficulty==='medium'?'medium':'hard'}">${q.difficulty}</span>
+        <div class="topic-card" style="margin-bottom:0.5rem;cursor:default;overflow:hidden;">
+          <div style="flex:1;min-width:0;overflow:hidden;"><div class="text-sm font-semibold" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${q.question}</div>
+          <div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${q.exam} • ${q.subject} • ${q.topic}</div></div>
+          <div class="flex items-center gap-sm" style="flex-shrink:0;margin-left:0.5rem;"><span class="badge badge-${q.difficulty==='easy'?'easy':q.difficulty==='medium'?'medium':'hard'}">${q.difficulty}</span>
           <button class="btn btn-ghost btn-sm js-del-q" data-qid="${q.id}" type="button">🗑️</button></div>
         </div>
       `).join('');
@@ -654,8 +726,9 @@ export async function renderAdminQuestions(container) {
     document.getElementById('search-questions').addEventListener('input', async e => {
       const s = e.target.value.toLowerCase().trim();
       const all = await Store.getAllQuestions();
-      if (!s) { renderQL(all); return; }
-      renderQL(all.filter(q => q.question.toLowerCase().includes(s)||q.topic.toLowerCase().includes(s)||q.subject.toLowerCase().includes(s)));
+      const filtered = getFilteredQuestions(all);
+      if (!s) { renderQL(filtered); return; }
+      renderQL(filtered.filter(q => q.question.toLowerCase().includes(s)||q.topic.toLowerCase().includes(s)||q.subject.toLowerCase().includes(s)));
     });
     document.getElementById('refresh-stats').addEventListener('click', () => { loadStats(); loadQL(); });
     loadStats(); loadQL();

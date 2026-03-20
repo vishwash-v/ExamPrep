@@ -19,8 +19,12 @@ export function renderResults(container) {
 
   const result = JSON.parse(resultData);
   const exam = EXAMS[result.exam];
+  // Fallbacks for older results that may not have these fields
+  const marking = result.marking || (exam ? exam.marking : { correct: 4, incorrect: -1, unanswered: 0 });
+  const timeLimit = result.timeLimit || (result.timeTaken || 0);
   const scorePercentage = percentage(result.score, result.totalMarks);
-  const timeUsedPct = percentage(result.timeTaken, result.timeLimit);
+  const timeUsedPct = timeLimit > 0 ? percentage(result.timeTaken, timeLimit) : 0;
+  const hasQuestionResults = result.questionResults && result.questionResults.length > 0;
 
   container.innerHTML = `
     <nav class="navbar">
@@ -39,7 +43,7 @@ export function renderResults(container) {
         <h2 style="margin-bottom: 0.5rem;">
           ${result.accuracy >= 80 ? 'Excellent!' : result.accuracy >= 60 ? 'Good Job!' : result.accuracy >= 40 ? 'Keep Practicing!' : 'Don\'t Give Up!'}
         </h2>
-        <p class="text-muted mb-lg">${result.exam} • ${result.topic || 'Mock Test'} • ${formatDate(Date.now())}</p>
+        <p class="text-muted mb-lg">${result.exam} • ${result.topic || 'Mock Test'} • ${formatDate(result.timestamp || Date.now())}</p>
 
         <div class="flex justify-center gap-xl flex-wrap">
           <div>
@@ -88,16 +92,19 @@ export function renderResults(container) {
       <!-- Marking info -->
       <div class="card mb-lg p-md">
         <div class="flex items-center gap-lg flex-wrap text-sm">
-          <span>Marking: <span class="font-semibold text-green">+${result.marking.correct} correct</span></span>
-          <span><span class="font-semibold text-red">${result.marking.incorrect} incorrect</span></span>
-          <span>Time Used: <span class="font-semibold">${timeUsedPct}%</span> of ${formatTime(result.timeLimit)}</span>
+          <span>Marking: <span class="font-semibold text-green">+${marking.correct} correct</span></span>
+          <span><span class="font-semibold text-red">${marking.incorrect} incorrect</span></span>
+          ${timeLimit > 0 ? `<span>Time Used: <span class="font-semibold">${timeUsedPct}%</span> of ${formatTime(timeLimit)}</span>` : ''}
         </div>
+        ${timeLimit > 0 ? `
         <div class="progress-bar mt-sm">
           <div class="progress-fill ${timeUsedPct > 90 ? 'warning' : 'green'}" style="width: ${timeUsedPct}%"></div>
         </div>
+        ` : ''}
       </div>
 
       <!-- Topic Breakdown -->
+      ${result.topicBreakdown ? `
       <div class="card mb-lg">
         <div class="card-header">
           <span class="card-title">📊 Topic-wise Breakdown</span>
@@ -134,8 +141,10 @@ export function renderResults(container) {
           </table>
         </div>
       </div>
+      ` : ''}
 
       <!-- Question Review -->
+      ${hasQuestionResults ? `
       <div class="card">
         <div class="card-header">
           <span class="card-title">📝 Detailed Review</span>
@@ -147,6 +156,17 @@ export function renderResults(container) {
         </div>
         <div id="question-review-list"></div>
       </div>
+      ` : `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📝 Detailed Review</span>
+        </div>
+        <div class="empty-state" style="padding: 2rem;">
+          <p class="text-muted">Detailed question review is not available for this test.</p>
+          <p class="text-xs text-muted mt-sm">Tests taken after this update will include full solutions and answer review.</p>
+        </div>
+      </div>
+      `}
 
       <!-- Action buttons -->
       <div class="flex justify-center gap-md mt-lg">
@@ -155,70 +175,72 @@ export function renderResults(container) {
     </div>
   `;
 
-  // Render review list
-  let currentFilter = 'all';
+  // Render review list (only if question data exists)
+  if (hasQuestionResults) {
+    let currentFilter = 'all';
 
-  function renderReviewList(filter) {
-    const list = document.getElementById('question-review-list');
-    let questions = result.questionResults;
+    function renderReviewList(filter) {
+      const list = document.getElementById('question-review-list');
+      let questions = result.questionResults;
 
-    if (filter === 'wrong') questions = questions.filter(q => !q.isCorrect && !q.isUnanswered);
-    if (filter === 'correct') questions = questions.filter(q => q.isCorrect);
+      if (filter === 'wrong') questions = questions.filter(q => !q.isCorrect && !q.isUnanswered);
+      if (filter === 'correct') questions = questions.filter(q => q.isCorrect);
 
-    if (questions.length === 0) {
-      list.innerHTML = '<div class="empty-state"><p class="text-muted">No questions match this filter</p></div>';
-      return;
+      if (questions.length === 0) {
+        list.innerHTML = '<div class="empty-state"><p class="text-muted">No questions match this filter</p></div>';
+        return;
+      }
+
+      const labels = ['A', 'B', 'C', 'D'];
+      list.innerHTML = questions.map((q, idx) => `
+        <div class="review-question" style="padding: 1.25rem; border-bottom: 1px solid var(--border-color);">
+          <div class="flex items-center justify-between mb-sm">
+            <span class="font-semibold text-sm">
+              ${q.isCorrect ? '✅' : q.isUnanswered ? '⬜' : '❌'} Q${idx + 1}
+            </span>
+            <div class="flex gap-sm">
+              <span class="badge badge-${q.difficulty === 'easy' ? 'easy' : q.difficulty === 'medium' ? 'medium' : 'hard'}">${q.difficulty}</span>
+              <span class="text-xs text-muted">${q.topic}</span>
+            </div>
+          </div>
+          <p class="mb-md" style="line-height: 1.6;">${q.question}</p>
+          <div class="options-list" style="gap: 0.5rem;">
+            ${q.options.map((opt, i) => {
+              let cls = '';
+              if (i === q.correctAnswer) cls = 'correct';
+              else if (i === q.userAnswer && !q.isCorrect) cls = 'wrong';
+              return `
+                <div class="option-item ${cls}" style="cursor: default; padding: 0.625rem 0.875rem;">
+                  <span class="option-label" style="width: 24px; height: 24px; min-width: 24px; font-size: 0.7rem;">${labels[i]}</span>
+                  <span class="text-sm">${opt}</span>
+                  ${i === q.correctAnswer ? '<span class="text-xs text-green" style="margin-left: auto;">✓ Correct</span>' : ''}
+                  ${i === q.userAnswer && !q.isCorrect ? '<span class="text-xs text-red" style="margin-left: auto;">Your answer</span>' : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+          ${q.solution ? `
+            <div class="mt-md" style="padding: 0.875rem; background: rgba(59, 130, 246, 0.08); border-radius: var(--radius-md); border-left: 3px solid var(--accent-blue);">
+              <div class="text-xs font-semibold text-blue mb-sm">💡 Solution</div>
+              <p class="text-sm" style="line-height: 1.6; color: var(--text-secondary);">${q.solution}</p>
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
     }
 
-    const labels = ['A', 'B', 'C', 'D'];
-    list.innerHTML = questions.map((q, idx) => `
-      <div class="review-question" style="padding: 1.25rem; border-bottom: 1px solid var(--border-color);">
-        <div class="flex items-center justify-between mb-sm">
-          <span class="font-semibold text-sm">
-            ${q.isCorrect ? '✅' : q.isUnanswered ? '⬜' : '❌'} Q${idx + 1}
-          </span>
-          <div class="flex gap-sm">
-            <span class="badge badge-${q.difficulty === 'easy' ? 'easy' : q.difficulty === 'medium' ? 'medium' : 'hard'}">${q.difficulty}</span>
-            <span class="text-xs text-muted">${q.topic}</span>
-          </div>
-        </div>
-        <p class="mb-md" style="line-height: 1.6;">${q.question}</p>
-        <div class="options-list" style="gap: 0.5rem;">
-          ${q.options.map((opt, i) => {
-            let cls = '';
-            if (i === q.correctAnswer) cls = 'correct';
-            else if (i === q.userAnswer && !q.isCorrect) cls = 'wrong';
-            return `
-              <div class="option-item ${cls}" style="cursor: default; padding: 0.625rem 0.875rem;">
-                <span class="option-label" style="width: 24px; height: 24px; min-width: 24px; font-size: 0.7rem;">${labels[i]}</span>
-                <span class="text-sm">${opt}</span>
-                ${i === q.correctAnswer ? '<span class="text-xs text-green" style="margin-left: auto;">✓ Correct</span>' : ''}
-                ${i === q.userAnswer && !q.isCorrect ? '<span class="text-xs text-red" style="margin-left: auto;">Your answer</span>' : ''}
-              </div>
-            `;
-          }).join('')}
-        </div>
-        ${q.solution ? `
-          <div class="mt-md" style="padding: 0.875rem; background: rgba(59, 130, 246, 0.08); border-radius: var(--radius-md); border-left: 3px solid var(--accent-blue);">
-            <div class="text-xs font-semibold text-blue mb-sm">💡 Solution</div>
-            <p class="text-sm" style="line-height: 1.6; color: var(--text-secondary);">${q.solution}</p>
-          </div>
-        ` : ''}
-      </div>
-    `).join('');
-  }
+    renderReviewList('all');
 
-  renderReviewList('all');
-
-  // Filter buttons
-  document.querySelectorAll('.review-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.review-filter').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentFilter = btn.dataset.filter;
-      renderReviewList(currentFilter);
+    // Filter buttons
+    document.querySelectorAll('.review-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.review-filter').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        renderReviewList(currentFilter);
+      });
     });
-  });
+  }
 
   // Navigation
   document.getElementById('back-dashboard')?.addEventListener('click', () => {
