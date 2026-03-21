@@ -396,11 +396,11 @@ export async function renderStudentDashboard(container) {
     }
 
     const recentList = document.getElementById('recent-tests-list');
-    if (examResults.length > 0) {
-      recentList.innerHTML = examResults.slice(0, 5).map((r, idx) => `
+    if (results.length > 0) {
+      recentList.innerHTML = results.slice(0, 5).map((r, idx) => `
         <div class="topic-card js-review-test" data-ridx="${idx}" style="cursor: pointer;">
           <div>
-            <div class="font-semibold text-sm">${r.topic || r.type}</div>
+            <div class="font-semibold text-sm">${r.topic || r.type} <span class="badge badge-blue" style="font-size:0.6rem; padding:0.2rem 0.4rem; margin-left:0.5rem;">${r.exam}</span></div>
             <div class="text-xs text-muted">${formatDate(r.timestamp)} • ${r.totalQuestions}Q</div>
           </div>
           <div class="flex items-center gap-sm">
@@ -415,7 +415,7 @@ export async function renderStudentDashboard(container) {
       recentList.querySelectorAll('.js-review-test').forEach(card => {
         card.addEventListener('click', () => {
           const idx = parseInt(card.dataset.ridx);
-          const result = examResults[idx];
+          const result = results[idx];
           if (result) {
             sessionStorage.setItem('lastResult', JSON.stringify(result));
             window.location.hash = '#/student/results';

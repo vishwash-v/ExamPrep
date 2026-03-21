@@ -191,7 +191,7 @@ export const PerformanceTracker = {
       topicPerformance,
       weakTopics,
       strongTopics,
-      recentTests: examResults.slice(0, 10)
+      recentTests: results.slice(0, 10)
     };
   }
 };

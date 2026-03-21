@@ -170,7 +170,7 @@ export async function renderAdminQuestions(container) {
                 <span class="text-sm font-semibold">📖 Provide Revision Material?</span>
               </label>
               <div id="sch-revision-area" style="display:none;">
-                <p class="text-xs text-muted mb-sm">This material will be shown to the student for <strong>5 minutes</strong> before the test starts. No skipping allowed.</p>
+                <p class="text-xs text-muted mb-sm">This material will be shown to the student for <strong>10 minutes</strong> before the test starts. No skipping allowed.</p>
                 <textarea class="form-textarea" id="sch-revision-material" rows="6" placeholder="Paste revision notes, formulas, key concepts here..."></textarea>
               </div>
             </div>

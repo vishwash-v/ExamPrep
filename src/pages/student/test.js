@@ -36,7 +36,7 @@ export function renderTest(container) {
   // Enable anti-cheat
   initAntiCheat(user.name);
 
-  // If revision material exists, show it for 5 minutes first
+  // If revision material exists, show it for 10 minutes first
   if (currentTest.revisionMaterial) {
     showRevisionScreen(container, user, () => {
       renderTestUI(container);
@@ -47,7 +47,7 @@ export function renderTest(container) {
 }
 
 function showRevisionScreen(container, user, onComplete) {
-  let revisionTimeLeft = 5 * 60; // 5 minutes in seconds
+  let revisionTimeLeft = 10 * 60; // 10 minutes in seconds
 
   container.innerHTML = `
     <div class="test-page no-select">
@@ -58,7 +58,7 @@ function showRevisionScreen(container, user, onComplete) {
           <span class="text-sm text-muted">${currentTest.topic || 'Scheduled Test'}</span>
         </div>
         <div class="flex items-center gap-md">
-          <div class="timer-display" id="revision-timer" style="background: rgba(59, 130, 246, 0.15); color: var(--accent-blue);">05:00</div>
+          <div class="timer-display" id="revision-timer" style="background: rgba(59, 130, 246, 0.15); color: var(--accent-blue);">10:00</div>
           <span class="badge badge-medium" style="padding: 0.4rem 0.8rem;">📖 Revision</span>
         </div>
       </div>
@@ -74,7 +74,7 @@ function showRevisionScreen(container, user, onComplete) {
           </div>
         </div>
         <div style="text-align: center; margin-top: 1.5rem;">
-          <div class="text-sm text-muted">⏳ Test will start automatically in <strong id="revision-countdown-text">5:00</strong></div>
+          <div class="text-sm text-muted">⏳ Test will start automatically in <strong id="revision-countdown-text">10:00</strong></div>
           <div class="progress-bar mt-md" style="max-width: 400px; margin: 0 auto;">
             <div class="progress-fill green" id="revision-progress" style="width: 0%; transition: width 1s linear;"></div>
           </div>
@@ -96,7 +96,7 @@ function showRevisionScreen(container, user, onComplete) {
   const timerEl = document.getElementById('revision-timer');
   const countdownText = document.getElementById('revision-countdown-text');
   const progressBar = document.getElementById('revision-progress');
-  const totalTime = 300; // 5 min
+  const totalTime = 600; // 10 min
 
   const revInterval = setInterval(() => {
     revisionTimeLeft--;
