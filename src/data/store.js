@@ -343,10 +343,25 @@ export const Store = {
     return Object.values(stats);
   },
 
-  // ---- Test Results (incremental direct saves) ----
+  // ---- Test Results (flag-based incremental saves) ----
 
-  // Step 1: Called when test STARTS — creates the result shell
-  async initTestResult(userId, testMeta) {
+  // Step 1: Called when test STARTS — saves ALL questions with answered:0
+  async initTestResult(userId, testMeta, questions) {
+    const questionResults = questions.map(q => ({
+      questionId: q.id,
+      question: q.question,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      userAnswer: null,
+      isCorrect: false,
+      isUnanswered: true,
+      answered: 0,
+      topic: q.topic,
+      subject: q.subject,
+      difficulty: q.difficulty,
+      solution: q.solution || ''
+    }));
+
     const entry = {
       status: 'in-progress',
       timestamp: Date.now(),
@@ -360,22 +375,27 @@ export const Store = {
       totalQuestions: testMeta.totalQuestions || 0,
       timeLimit: testMeta.timeLimit || 0,
       marking: testMeta.marking || {},
-      questionResults: []
+      questionResults
     };
     try {
       const key = await fbPush(`testResults/${userId}`, entry);
-      return key; // this key is used for all subsequent writes
+      return key;
     } catch (e) {
       console.error('initTestResult failed:', e);
       return null;
     }
   },
 
-  // Step 2: Called each time student selects/changes an option
-  async saveAnswerToResult(userId, resultKey, questionIndex, questionData) {
+  // Step 2: Called when student selects/changes an option — just update answer + flag
+  async saveAnswerToResult(userId, resultKey, questionIndex, userAnswer, correctAnswer) {
     if (!resultKey) return false;
     try {
-      await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+      await fbUpdate(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, {
+        userAnswer,
+        isCorrect: userAnswer === correctAnswer,
+        isUnanswered: false,
+        answered: 1
+      });
       return true;
     } catch (e) {
       console.warn('saveAnswerToResult failed:', e.message);
@@ -383,11 +403,16 @@ export const Store = {
     }
   },
 
-  // Step 2b: Called when student clears an answer
-  async clearAnswerInResult(userId, resultKey, questionIndex, questionData) {
+  // Step 2b: Called when student clears an answer — flip flag back
+  async clearAnswerInResult(userId, resultKey, questionIndex) {
     if (!resultKey) return false;
     try {
-      await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+      await fbUpdate(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, {
+        userAnswer: null,
+        isCorrect: false,
+        isUnanswered: true,
+        answered: 0
+      });
       return true;
     } catch (e) {
       console.warn('clearAnswerInResult failed:', e.message);

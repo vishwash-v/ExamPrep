@@ -38,7 +38,7 @@ export function renderTest(container) {
   // Enable anti-cheat
   initAntiCheat(user.name);
 
-  // Create the test result entry in Firebase immediately
+  // Create the test result entry in Firebase with ALL questions (answered:0)
   (async () => {
     activeResultKey = await Store.initTestResult(user.id, {
       testId: currentTest.id,
@@ -50,9 +50,9 @@ export function renderTest(container) {
       totalQuestions: currentTest.totalQuestions || currentTest.questions.length,
       timeLimit: currentTest.timeLimit || 0,
       marking: currentTest.marking || {}
-    });
+    }, currentTest.questions);
     if (activeResultKey) {
-      console.log('Test result initialized:', activeResultKey);
+      console.log('Test result initialized with all questions:', activeResultKey);
     }
   })();
 
@@ -326,22 +326,11 @@ function renderTestUI(container) {
   document.getElementById('clear-btn').addEventListener('click', () => {
     const q = currentTest.questions[currentQuestionIndex];
     delete answers[currentQuestionIndex];
-    // Save cleared state directly to testResults
+    // Save cleared state — just flip the flag
     const user = Store.getSession();
     if (user && activeResultKey) {
-      Store.clearAnswerInResult(user.id, activeResultKey, currentQuestionIndex, {
-        questionId: q.id,
-        question: q.question,
-        options: q.options,
-        correctAnswer: q.correctAnswer,
-        userAnswer: null,
-        isCorrect: false,
-        isUnanswered: true,
-        topic: q.topic,
-        subject: q.subject,
-        difficulty: q.difficulty,
-        solution: q.solution || ''
-      }).then(ok => showSaveIndicator(ok));
+      Store.clearAnswerInResult(user.id, activeResultKey, currentQuestionIndex)
+        .then(ok => showSaveIndicator(ok));
     }
     renderQuestion(currentQuestionIndex);
     updatePalette();
@@ -388,23 +377,12 @@ function renderQuestion(index) {
     item.addEventListener('click', () => {
       const optIndex = parseInt(item.dataset.index);
       answers[currentQuestionIndex] = optIndex;
-      // Save answer directly to testResults in Firebase
+      // Save answer — just update answer + flag
       const user = Store.getSession();
       const q = currentTest.questions[currentQuestionIndex];
       if (user && activeResultKey) {
-        Store.saveAnswerToResult(user.id, activeResultKey, currentQuestionIndex, {
-          questionId: q.id,
-          question: q.question,
-          options: q.options,
-          correctAnswer: q.correctAnswer,
-          userAnswer: optIndex,
-          isCorrect: optIndex === q.correctAnswer,
-          isUnanswered: false,
-          topic: q.topic,
-          subject: q.subject,
-          difficulty: q.difficulty,
-          solution: q.solution || ''
-        }).then(ok => showSaveIndicator(ok));
+        Store.saveAnswerToResult(user.id, activeResultKey, currentQuestionIndex, optIndex, q.correctAnswer)
+          .then(ok => showSaveIndicator(ok));
       }
       renderQuestion(currentQuestionIndex);
       updatePalette();
@@ -579,89 +557,76 @@ async function submitTest() {
     result.type = 'scheduled';
   }
 
-  // Finalize: write only the summary stats (answers already saved per-question)
-  if (activeResultKey) {
-    try {
-      // First, save unanswered questions that the student never visited
-      for (let i = 0; i < currentTest.questions.length; i++) {
-        if (answers[i] === undefined) {
-          const q = currentTest.questions[i];
-          await Store.saveAnswerToResult(user.id, activeResultKey, i, {
-            questionId: q.id,
-            question: q.question,
-            options: q.options,
-            correctAnswer: q.correctAnswer,
-            userAnswer: null,
-            isCorrect: false,
-            isUnanswered: true,
-            topic: q.topic,
-            subject: q.subject,
-            difficulty: q.difficulty,
-            solution: q.solution || ''
+  // Safety timeout — force redirect after 15 seconds no matter what
+  const safetyTimeout = setTimeout(() => {
+    console.warn('Submit safety timeout — force redirecting');
+    sessionStorage.setItem('lastResult', JSON.stringify(result));
+    sessionStorage.removeItem('currentTest');
+    const el = document.getElementById('submit-overlay');
+    if (el) el.remove();
+    window.location.hash = '#/student/results';
+  }, 15000);
+
+  try {
+    // Save to Firebase — just summary stats (all questions already saved at start)
+    if (activeResultKey) {
+      try {
+        await Store.finalizeTestResult(user.id, activeResultKey, {
+          correct: result.correct,
+          incorrect: result.incorrect,
+          unanswered: result.unanswered,
+          score: result.score,
+          totalMarks: result.totalMarks,
+          accuracy: result.accuracy,
+          timeTaken: result.timeTaken,
+          timeLimit: result.timeLimit,
+          avgTimePerQuestion: result.avgTimePerQuestion,
+          topicBreakdown: result.topicBreakdown,
+          tabSwitches: result.tabSwitches,
+          scheduledTestId: result.scheduledTestId || '',
+          type: result.type
+        });
+
+        // Save mistakes
+        const mistakes = result.questionResults.filter(q => !q.isCorrect && !q.isUnanswered);
+        for (const m of mistakes) {
+          await Store.saveMistake(user.id, {
+            questionId: m.questionId, exam: result.exam,
+            subject: m.subject, topic: m.topic,
+            userAnswer: m.userAnswer, correctAnswer: m.correctAnswer,
+            difficulty: m.difficulty
           });
         }
+        const questionIds = result.questionResults.map(q => q.questionId);
+        await Store.markQuestionsAttempted(user.id, questionIds);
+
+      } catch (e) {
+        console.error('finalizeTestResult failed, fallback:', e);
+        await PerformanceTracker.saveResult(user.id, result);
       }
-
-      await Store.finalizeTestResult(user.id, activeResultKey, {
-        correct: result.correct,
-        incorrect: result.incorrect,
-        unanswered: result.unanswered,
-        score: result.score,
-        totalMarks: result.totalMarks,
-        accuracy: result.accuracy,
-        timeTaken: result.timeTaken,
-        timeLimit: result.timeLimit,
-        avgTimePerQuestion: result.avgTimePerQuestion,
-        topicBreakdown: result.topicBreakdown,
-        tabSwitches: result.tabSwitches,
-        scheduledTestId: result.scheduledTestId || '',
-        type: result.type
-      });
-
-      // Save mistakes and mark attempted (only in primary path)
-      const mistakes = result.questionResults.filter(q => !q.isCorrect && !q.isUnanswered);
-      for (const mistake of mistakes) {
-        await Store.saveMistake(user.id, {
-          questionId: mistake.questionId,
-          exam: result.exam,
-          subject: mistake.subject,
-          topic: mistake.topic,
-          userAnswer: mistake.userAnswer,
-          correctAnswer: mistake.correctAnswer,
-          difficulty: mistake.difficulty
-        });
-      }
-      const questionIds = result.questionResults.map(q => q.questionId);
-      await Store.markQuestionsAttempted(user.id, questionIds);
-
-    } catch (e) {
-      console.error('finalizeTestResult failed, saving full result as fallback:', e);
-      // Fallback does everything (save result + mistakes + attempted)
+    } else {
       await PerformanceTracker.saveResult(user.id, result);
     }
-  } else {
-    // Fallback: no activeResultKey (initTestResult failed), do full save
-    await PerformanceTracker.saveResult(user.id, result);
+
+    // Mark scheduled test as completed
+    if (currentTest.scheduledTestId) {
+      try {
+        await Store.updateScheduledTest(currentTest.scheduledTestId, {
+          status: 'completed', completedAt: Date.now()
+        });
+      } catch (e) { console.warn('Could not update scheduled test status:', e); }
+    }
+  } catch (e) {
+    console.error('submitTest error:', e);
+  } finally {
+    // ALWAYS redirect — no matter what
+    clearTimeout(safetyTimeout);
+    sessionStorage.setItem('lastResult', JSON.stringify(result));
+    sessionStorage.removeItem('currentTest');
+    const el = document.getElementById('submit-overlay');
+    if (el) el.remove();
+    window.location.hash = '#/student/results';
   }
-
-  // Mark scheduled test as completed
-  if (currentTest.scheduledTestId) {
-    try {
-      await Store.updateScheduledTest(currentTest.scheduledTestId, {
-        status: 'completed',
-        completedAt: Date.now()
-      });
-    } catch (e) { console.warn('Could not update scheduled test status:', e); }
-  }
-
-  // Store result in sessionStorage for results page
-  sessionStorage.setItem('lastResult', JSON.stringify(result));
-  sessionStorage.removeItem('currentTest');
-
-  // Remove overlay and navigate
-  const overlayEl = document.getElementById('submit-overlay');
-  if (overlayEl) overlayEl.remove();
-  window.location.hash = '#/student/results';
 }
 
 // Cleanup on page leave
