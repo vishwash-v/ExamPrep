@@ -343,18 +343,125 @@ export const Store = {
     return Object.values(stats);
   },
 
-  // ---- Test Results ----
+  // ---- Test Results (incremental direct saves) ----
+
+  // Step 1: Called when test STARTS — creates the result shell
+  async initTestResult(userId, testMeta) {
+    const entry = {
+      status: 'in-progress',
+      timestamp: Date.now(),
+      userId,
+      testId: testMeta.testId || '',
+      type: testMeta.type || 'topic',
+      exam: testMeta.exam || '',
+      subject: testMeta.subject || '',
+      topic: testMeta.topic || '',
+      scheduledTestId: testMeta.scheduledTestId || '',
+      totalQuestions: testMeta.totalQuestions || 0,
+      timeLimit: testMeta.timeLimit || 0,
+      marking: testMeta.marking || {},
+      questionResults: []
+    };
+    try {
+      const key = await fbPush(`testResults/${userId}`, entry);
+      return key; // this key is used for all subsequent writes
+    } catch (e) {
+      console.error('initTestResult failed:', e);
+      return null;
+    }
+  },
+
+  // Step 2: Called each time student selects/changes an option
+  async saveAnswerToResult(userId, resultKey, questionIndex, questionData) {
+    if (!resultKey) return;
+    try {
+      await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+    } catch (e) {
+      console.warn('saveAnswerToResult failed:', e.message);
+    }
+  },
+
+  // Step 2b: Called when student clears an answer
+  async clearAnswerInResult(userId, resultKey, questionIndex, questionData) {
+    if (!resultKey) return;
+    try {
+      // Save with answer cleared (keep question info, mark as unanswered)
+      await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+    } catch (e) {
+      console.warn('clearAnswerInResult failed:', e.message);
+    }
+  },
+
+  // Step 3: Called on submit — only writes the small summary stats
+  async finalizeTestResult(userId, resultKey, summaryData) {
+    if (!resultKey) return;
+    try {
+      await fbUpdate(`testResults/${userId}/${resultKey}`, {
+        ...summaryData,
+        status: 'completed',
+        timestamp: Date.now()
+      });
+    } catch (e) {
+      console.error('finalizeTestResult failed:', e);
+      throw e;
+    }
+  },
+
+  // Legacy: still used as fallback if initTestResult wasn't called
   async saveTestResult(userId, result) {
     result.timestamp = Date.now();
     result.userId = userId;
-    const key = await fbPush(`testResults/${userId}`, result);
-    return key;
+    try {
+      const key = await fbPush(`testResults/${userId}`, result);
+      return key;
+    } catch (e) {
+      console.error('saveTestResult failed:', e);
+      try {
+        const minimal = { ...result };
+        delete minimal.questionResults;
+        const key = await fbPush(`testResults/${userId}`, minimal);
+        console.warn('Saved test result without questionResults (fallback)');
+        return key;
+      } catch (e2) {
+        console.error('saveTestResult fallback also failed:', e2);
+        throw e2;
+      }
+    }
+  },
+
+  // Auto-delete solutions from test results older than 3 days to save memory
+  async cleanupOldSolutions(userId) {
+    try {
+      const results = await fbGet(`testResults/${userId}`);
+      if (!results) return;
+
+      const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+      let cleaned = 0;
+
+      for (const [key, result] of Object.entries(results)) {
+        if (result.timestamp && result.timestamp < threeDaysAgo && result.questionResults) {
+          // Remove solutions from old results but keep everything else
+          const trimmedQR = result.questionResults.map(q => {
+            const { solution, ...rest } = (typeof q === 'object' && q) ? q : {};
+            return rest;
+          });
+          await fbUpdate(`testResults/${userId}/${key}`, { questionResults: trimmedQR });
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) console.log(`Cleaned solutions from ${cleaned} old test results`);
+    } catch (e) {
+      console.warn('cleanupOldSolutions failed:', e.message);
+    }
   },
 
   async getTestResults(userId) {
     const results = await fbGet(`testResults/${userId}`);
     if (!results) return [];
-    return Object.values(results).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    // Only show completed tests (filter out in-progress)
+    return Object.values(results)
+      .filter(r => r.status !== 'in-progress')
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   },
 
   // ---- Mistakes Database ----

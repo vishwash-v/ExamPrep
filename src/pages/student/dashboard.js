@@ -439,6 +439,9 @@ export async function renderStudentDashboard(container) {
   loadStats(currentExam);
   loadScheduledTests();
 
+  // Auto-cleanup solutions older than 3 days to save Firebase memory
+  Store.cleanupOldSolutions(user.id);
+
   // Auto-refresh scheduled tests every 30 seconds
   const schedRefresh = setInterval(() => loadScheduledTests(), 30000);
 

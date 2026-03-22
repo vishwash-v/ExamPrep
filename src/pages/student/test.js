@@ -14,6 +14,7 @@ let markedForReview = new Set();
 let currentQuestionIndex = 0;
 let timeRemaining = 0;
 let startTime = 0;
+let activeResultKey = null; // Firebase key for the current test result
 
 export function renderTest(container) {
   const user = Store.getSession();
@@ -30,13 +31,32 @@ export function renderTest(container) {
   answers = {};
   markedForReview = new Set();
   currentQuestionIndex = 0;
-  timeRemaining = currentTest.timeLimit * 60; // convert to seconds
+  timeRemaining = currentTest.timeLimit * 60;
   startTime = Date.now();
+  activeResultKey = null;
 
   // Enable anti-cheat
   initAntiCheat(user.name);
 
-  // If revision material exists, show it for 10 minutes first
+  // Create the test result entry in Firebase immediately
+  (async () => {
+    activeResultKey = await Store.initTestResult(user.id, {
+      testId: currentTest.id,
+      type: currentTest.scheduledTestId ? 'scheduled' : (currentTest.type || 'topic'),
+      exam: currentTest.exam || '',
+      subject: currentTest.subject || '',
+      topic: currentTest.topic || '',
+      scheduledTestId: currentTest.scheduledTestId || '',
+      totalQuestions: currentTest.totalQuestions || currentTest.questions.length,
+      timeLimit: currentTest.timeLimit || 0,
+      marking: currentTest.marking || {}
+    });
+    if (activeResultKey) {
+      console.log('Test result initialized:', activeResultKey);
+    }
+  })();
+
+  // If revision material exists, show it first
   if (currentTest.revisionMaterial) {
     showRevisionScreen(container, user, () => {
       renderTestUI(container);
@@ -287,7 +307,25 @@ function renderTestUI(container) {
   });
 
   document.getElementById('clear-btn').addEventListener('click', () => {
+    const q = currentTest.questions[currentQuestionIndex];
     delete answers[currentQuestionIndex];
+    // Save cleared state directly to testResults
+    const user = Store.getSession();
+    if (user && activeResultKey) {
+      Store.clearAnswerInResult(user.id, activeResultKey, currentQuestionIndex, {
+        questionId: q.id,
+        question: q.question,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        userAnswer: null,
+        isCorrect: false,
+        isUnanswered: true,
+        topic: q.topic,
+        subject: q.subject,
+        difficulty: q.difficulty,
+        solution: q.solution || ''
+      });
+    }
     renderQuestion(currentQuestionIndex);
     updatePalette();
   });
@@ -333,6 +371,24 @@ function renderQuestion(index) {
     item.addEventListener('click', () => {
       const optIndex = parseInt(item.dataset.index);
       answers[currentQuestionIndex] = optIndex;
+      // Save answer directly to testResults in Firebase
+      const user = Store.getSession();
+      const q = currentTest.questions[currentQuestionIndex];
+      if (user && activeResultKey) {
+        Store.saveAnswerToResult(user.id, activeResultKey, currentQuestionIndex, {
+          questionId: q.id,
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          userAnswer: optIndex,
+          isCorrect: optIndex === q.correctAnswer,
+          isUnanswered: false,
+          topic: q.topic,
+          subject: q.subject,
+          difficulty: q.difficulty,
+          solution: q.solution || ''
+        });
+      }
       renderQuestion(currentQuestionIndex);
       updatePalette();
     });
@@ -474,8 +530,70 @@ async function submitTest() {
     result.type = 'scheduled';
   }
 
-  // Save result
-  await PerformanceTracker.saveResult(user.id, result);
+  // Finalize: write only the summary stats (answers already saved per-question)
+  if (activeResultKey) {
+    try {
+      // First, save unanswered questions that the student never visited
+      for (let i = 0; i < currentTest.questions.length; i++) {
+        if (answers[i] === undefined) {
+          const q = currentTest.questions[i];
+          await Store.saveAnswerToResult(user.id, activeResultKey, i, {
+            questionId: q.id,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            userAnswer: null,
+            isCorrect: false,
+            isUnanswered: true,
+            topic: q.topic,
+            subject: q.subject,
+            difficulty: q.difficulty,
+            solution: q.solution || ''
+          });
+        }
+      }
+
+      await Store.finalizeTestResult(user.id, activeResultKey, {
+        correct: result.correct,
+        incorrect: result.incorrect,
+        unanswered: result.unanswered,
+        score: result.score,
+        totalMarks: result.totalMarks,
+        accuracy: result.accuracy,
+        timeTaken: result.timeTaken,
+        timeLimit: result.timeLimit,
+        avgTimePerQuestion: result.avgTimePerQuestion,
+        topicBreakdown: result.topicBreakdown,
+        tabSwitches: result.tabSwitches,
+        scheduledTestId: result.scheduledTestId || '',
+        type: result.type
+      });
+
+      // Save mistakes and mark attempted (only in primary path)
+      const mistakes = result.questionResults.filter(q => !q.isCorrect && !q.isUnanswered);
+      for (const mistake of mistakes) {
+        await Store.saveMistake(user.id, {
+          questionId: mistake.questionId,
+          exam: result.exam,
+          subject: mistake.subject,
+          topic: mistake.topic,
+          userAnswer: mistake.userAnswer,
+          correctAnswer: mistake.correctAnswer,
+          difficulty: mistake.difficulty
+        });
+      }
+      const questionIds = result.questionResults.map(q => q.questionId);
+      await Store.markQuestionsAttempted(user.id, questionIds);
+
+    } catch (e) {
+      console.error('finalizeTestResult failed, saving full result as fallback:', e);
+      // Fallback does everything (save result + mistakes + attempted)
+      await PerformanceTracker.saveResult(user.id, result);
+    }
+  } else {
+    // Fallback: no activeResultKey (initTestResult failed), do full save
+    await PerformanceTracker.saveResult(user.id, result);
+  }
 
   // Mark scheduled test as completed
   if (currentTest.scheduledTestId) {

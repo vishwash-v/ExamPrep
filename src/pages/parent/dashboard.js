@@ -330,6 +330,9 @@ export async function renderParentDashboard(container) {
   // Init
   await loadAnalytics(currentExam);
 
+  // Auto-cleanup solutions older than 3 days
+  Store.cleanupOldSolutions(studentId);
+
   // Exam switch
   document.querySelectorAll('.exam-switch-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
