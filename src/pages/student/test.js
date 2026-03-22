@@ -145,6 +145,15 @@ function showRevisionScreen(container, user, onComplete) {
   }, 1000);
 }
 
+let saveIndicatorTimeout = null;
+function showSaveIndicator() {
+  const el = document.getElementById('save-indicator');
+  if (!el) return;
+  el.style.opacity = '1';
+  clearTimeout(saveIndicatorTimeout);
+  saveIndicatorTimeout = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+}
+
 function renderTestUI(container) {
 
   container.innerHTML = `
@@ -157,6 +166,7 @@ function renderTestUI(container) {
           <span class="text-sm text-muted">${currentTest.topic || 'Mock Test'}</span>
         </div>
         <div class="flex items-center gap-md">
+          <span id="save-indicator" style="font-size: 0.75rem; color: #10b981; font-weight: 600; opacity: 0; transition: opacity 0.3s;">✓ Saved</span>
           <div class="timer-display" id="timer">--:--</div>
           <button class="btn btn-danger btn-sm" id="submit-test-btn">Submit Test</button>
         </div>
@@ -324,7 +334,7 @@ function renderTestUI(container) {
         subject: q.subject,
         difficulty: q.difficulty,
         solution: q.solution || ''
-      });
+      }).then(() => showSaveIndicator());
     }
     renderQuestion(currentQuestionIndex);
     updatePalette();
@@ -387,7 +397,7 @@ function renderQuestion(index) {
           subject: q.subject,
           difficulty: q.difficulty,
           solution: q.solution || ''
-        });
+        }).then(() => showSaveIndicator());
       }
       renderQuestion(currentQuestionIndex);
       updatePalette();
