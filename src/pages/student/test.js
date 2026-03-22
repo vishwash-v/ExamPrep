@@ -658,6 +658,9 @@ async function submitTest() {
   sessionStorage.setItem('lastResult', JSON.stringify(result));
   sessionStorage.removeItem('currentTest');
 
+  // Remove overlay and navigate
+  const overlayEl = document.getElementById('submit-overlay');
+  if (overlayEl) overlayEl.remove();
   window.location.hash = '#/student/results';
 }
 
