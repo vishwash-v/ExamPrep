@@ -373,22 +373,25 @@ export const Store = {
 
   // Step 2: Called each time student selects/changes an option
   async saveAnswerToResult(userId, resultKey, questionIndex, questionData) {
-    if (!resultKey) return;
+    if (!resultKey) return false;
     try {
       await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+      return true;
     } catch (e) {
       console.warn('saveAnswerToResult failed:', e.message);
+      return false;
     }
   },
 
   // Step 2b: Called when student clears an answer
   async clearAnswerInResult(userId, resultKey, questionIndex, questionData) {
-    if (!resultKey) return;
+    if (!resultKey) return false;
     try {
-      // Save with answer cleared (keep question info, mark as unanswered)
       await fbSet(`testResults/${userId}/${resultKey}/questionResults/${questionIndex}`, questionData);
+      return true;
     } catch (e) {
       console.warn('clearAnswerInResult failed:', e.message);
+      return false;
     }
   },
 

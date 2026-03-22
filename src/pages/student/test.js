@@ -146,12 +146,19 @@ function showRevisionScreen(container, user, onComplete) {
 }
 
 let saveIndicatorTimeout = null;
-function showSaveIndicator() {
+function showSaveIndicator(success = true) {
   const el = document.getElementById('save-indicator');
   if (!el) return;
+  if (success) {
+    el.textContent = '✓ Saved';
+    el.style.color = '#10b981';
+  } else {
+    el.textContent = '✗ Failed';
+    el.style.color = '#ef4444';
+  }
   el.style.opacity = '1';
   clearTimeout(saveIndicatorTimeout);
-  saveIndicatorTimeout = setTimeout(() => { el.style.opacity = '0'; }, 1200);
+  saveIndicatorTimeout = setTimeout(() => { el.style.opacity = '0'; }, 1500);
 }
 
 function renderTestUI(container) {
@@ -334,7 +341,7 @@ function renderTestUI(container) {
         subject: q.subject,
         difficulty: q.difficulty,
         solution: q.solution || ''
-      }).then(() => showSaveIndicator());
+      }).then(ok => showSaveIndicator(ok));
     }
     renderQuestion(currentQuestionIndex);
     updatePalette();
@@ -397,7 +404,7 @@ function renderQuestion(index) {
           subject: q.subject,
           difficulty: q.difficulty,
           solution: q.solution || ''
-        }).then(() => showSaveIndicator());
+        }).then(ok => showSaveIndicator(ok));
       }
       renderQuestion(currentQuestionIndex);
       updatePalette();
@@ -526,6 +533,38 @@ function showSubmitConfirm() {
 async function submitTest() {
   clearInterval(timerInterval);
   removeAntiCheat();
+
+  // Show full-screen overlay immediately to block interactions
+  const overlay = document.createElement('div');
+  overlay.id = 'submit-overlay';
+  overlay.innerHTML = `
+    <div style="
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(10, 14, 26, 0.95);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(10px);
+    ">
+      <div style="font-size: 4rem; margin-bottom: 1rem; animation: bounceIn 0.6s ease;">🎉</div>
+      <h2 style="color: #e2e8f0; margin-bottom: 0.5rem; animation: fadeInUp 0.6s ease 0.2s both;">Thank You!</h2>
+      <p style="color: #94a3b8; font-size: 1rem; margin-bottom: 2rem; animation: fadeInUp 0.6s ease 0.4s both;">Submitting your test, please wait...</p>
+      <div style="animation: fadeInUp 0.6s ease 0.6s both;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+    <style>
+      @keyframes bounceIn {
+        0% { transform: scale(0); opacity: 0; }
+        60% { transform: scale(1.2); }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes fadeInUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+    </style>
+  `;
+  document.body.appendChild(overlay);
 
   const user = Store.getSession();
   const timeTaken = Math.round((Date.now() - startTime) / 1000);
