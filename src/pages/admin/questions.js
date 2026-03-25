@@ -780,6 +780,7 @@ function parseQuestions(input, exam, subject, topic) {
       else if (line.match(/^ANS:\s*/i)) { const a = line.replace(/^ANS:\s*/i,'').trim().toUpperCase(); correctAnswer = {'A':0,'B':1,'C':2,'D':3}[a]??0; }
       else if (line.match(/^DIFF:\s*/i)) { difficulty = line.replace(/^DIFF:\s*/i,'').trim().toLowerCase(); if (!['easy','medium','hard'].includes(difficulty)) difficulty='medium'; }
       else if (line.match(/^SOL:\s*/i)) solution = line.replace(/^SOL:\s*/i,'').trim();
+      else if (question && line) { question += ' ' + line; }
     }
     if (question && options.length===4 && options.every(o=>o)) {
       questions.push({ id: generateId('q'), exam, subject, topic, question, options, correctAnswer, difficulty, solution });
